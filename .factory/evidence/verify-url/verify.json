@@ -1,0 +1,14 @@
+{
+  "url": "https://archive-restore-rehearsal.sociobot.in",
+  "loadMs": 760,
+  "errors": [],
+  "a11y": {
+    "title": "Archive Restore Rehearsal — map offline archives",
+    "lang": "en",
+    "h1": 1,
+    "main": true,
+    "imgsMissingAlt": 0,
+    "buttonsUnlabeled": 0,
+    "textLength": 803
+  }
+}
