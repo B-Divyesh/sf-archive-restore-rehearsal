@@ -1,0 +1,8 @@
+{
+  "slug": "archive-restore-rehearsal",
+  "title": "Archive Restore Rehearsal",
+  "artifact_class": "pwa-offline",
+  "user": "People with years of files across many USB disks who need a practical archive map and evidence that a random sample can still be restored and opened.",
+  "smallest_useful_product": "A local app that inventories mounted drives, records content hashes and physical labels, proposes a small rotating restore sample, opens supported files to prove readability, and exports a printable recovery card.",
+  "monetization": "one-time"
+}
