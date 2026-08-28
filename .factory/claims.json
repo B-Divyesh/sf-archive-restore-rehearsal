@@ -1,0 +1,23 @@
+[
+  {
+    "id": "demo-sandbox",
+    "claim": "Try it with sample data; nothing is saved to your real archive map.",
+    "where": "landing and demo banner",
+    "test": "npm run test:e2e -- --grep @claim:demo-sandbox",
+    "sandbox": "fresh browser context; load /demo, reset it, then load / and assert the real map is empty"
+  },
+  {
+    "id": "offline-reload",
+    "claim": "Works offline after the first visit.",
+    "where": "offline state",
+    "test": "npm run test:e2e -- --grep @claim:offline-reload",
+    "sandbox": "fresh browser context; load /demo, wait for the service worker, set offline, and reload"
+  },
+  {
+    "id": "privacy-local",
+    "claim": "Ordinary demo use makes no third-party network request.",
+    "where": "privacy page and product footer",
+    "test": "npm run test:e2e -- --grep @claim:privacy-local",
+    "sandbox": "fresh browser context; observe every request while using the demo rehearsal and require same-origin URLs"
+  }
+]

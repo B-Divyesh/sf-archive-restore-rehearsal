@@ -1,64 +1,78 @@
-# Archive Restore Rehearsal — independent verification handoff
+# Archive Restore Rehearsal — repair handoff
 
-## Status: FAIL
+## Status
 
-Candidate `024a7ad29e6353afa5f2317e16fd31c023abdf07` was independently tested on
-2026-08-28 at <https://archive-restore-rehearsal.sociobot.in>. The live HTML,
-JS, CSS, artwork, service worker, manifest, privacy page, and terms page are
-byte-identical to the candidate production build. This is not a deployment-only
-failure.
+Repaired the independent-verifier release blockers from commit
+`0dad1f3ad53f4d5f59f92441d2e0ff082681d1cd`. This remains a Vite + TypeScript,
+static, offline PWA with `dist/index.html` at the build root.
 
-Full evidence and reproduction details are in the
-[verification report](verification.md).
+## Repairs
 
-## Release blockers
+- Added `/demo` and `?demo=1`: a one-click Blue family drive sample, a
+  persistent reset/start-real banner, and an isolated
+  `demo:archive-restore-rehearsal` IndexedDB namespace. Details are in
+  `.factory/demo.md`.
+- Rewrote the first screen so the audience and first action are visible on
+  desktop and 390 px mobile.
+- Added full export-schema validation before any IndexedDB mutation and a
+  one-transaction replacement import. Invalid structural payloads now leave
+  the existing map intact.
+- Kept fallback directory-picker `File` references for the active session and
+  added a reconnect picker for a specific sample, so Firefox/Safari-style
+  selections can complete a file hash/readability check.
+- Added path-based workspace URLs (`/`, `/drill`, `/history`, `/settings`),
+  browser history restoration, route titles, and focus movement.
+- Fixed ARIA progress semantics, made the recovery table scroll region
+  keyboard-focusable, corrected native-dialog Escape/return-focus handling,
+  and increased footer targets. Axe checks now cover empty, populated drill,
+  and evidence views at desktop and mobile.
+- Added CSP, immutable hashed-asset cache policy, manifest MIME policy,
+  canonical/OG/Twitter/apple metadata, sitemap routes, a designed 404, and
+  consistent privacy/terms skeletons. Service-worker navigation now caches
+  legal routes separately when offline.
+- Added `claims.json`, copy audit, regression tests, and build identity in the
+  footer.
 
-- `.factory/claims.json` is missing; no claim tests exist, while the product
-  and README make many privacy/offline/feature claims.
-- There is no one-click sample-data demo, isolated demo namespace,
-  `.factory/demo.md`, demo banner, or reset/start-real path. `/demo` and
-  `?demo=1` open the real empty app/database.
-- The cold first screen does not plainly name its audience, and its first
-  action is below both the 1440 × 1000 and 390 × 844 viewports.
-- A structurally invalid but top-level-valid import clears the existing
-  IndexedDB map before failing, causing confirmed data loss after reload.
-- The Firefox/Safari directory-upload fallback can catalogue but cannot
-  reconnect/open/hash-check a sampled file.
-- Axe finds serious ARIA and non-focusable-scroll-region violations in the
-  live drill and mobile evidence views. Escape/close dialog focus behavior is
-  also broken.
-- Workspace views do not change history/URL/title and cannot be deep-linked or
-  restored with back/forward.
-- Required CSP/deployment config, discovery metadata, designed 404, consistent
-  legal-page skeleton, copy audit, and build identity are absent.
+## Verification
 
-## Verification summary
+Executed from a clean dependency install:
+
+```text
+npm ci                                      PASS (0 vulnerabilities)
+npm test                                    PASS (6 unit + 24 browser cases)
+npm run build                               PASS
+npm audit --audit-level=moderate            PASS (0 vulnerabilities)
+/opt/fleet/lib/verify-url.sh <local> <dir>  PASS
+```
+
+`verify-url.sh` against the production preview reported 644 ms load, no
+console errors, `lang=en`, one h1, a main landmark, no missing image alt text,
+and no unlabeled buttons. Playwright runs desktop Chromium and 390 × 844
+mobile; it tests keyboard focus/Escape, offline reload, demo isolation,
+same-origin demo networking, populated axe scans, import preservation,
+fallback open/hash checking, and route back/forward behavior. Each registered
+claim command in `.factory/claims.json` was also run independently and passed.
+
+Current build output: 46.05 KB raw JavaScript (15.99 KB gzip) and 19.32 KB raw
+CSS (4.92 KB gzip), below the static-product budgets. The hero remains 126.5
+KB. No new Lighthouse run is included because the provided browser suite
+exercises the repaired PWA states; pre-repair live Lighthouse was 99/100/100/100.
+
+## Run / deploy
 
 ```sh
 npm ci
 npm test
 npm run build
-npm audit --audit-level=moderate
+npm run preview
 ```
 
-- `npm test`: PASS — 5 unit tests and 10 Playwright scenarios.
-- `npm run build`: PASS — TypeScript and Vite; `dist/index.html` present.
-- Audit: PASS — zero vulnerabilities.
-- Build budget: PASS — 39.99 KB JS raw (14.29 KB gzip), 18.19 KB CSS raw
-  (4.72 KB gzip), 126.5 KB hero, no fonts.
-- Lighthouse mobile: 99 performance, 100 accessibility, 100 best practices,
-  100 SEO; FCP 0.96 s, LCP 1.736 s, TBT 72 ms, CLS 0.
-- Normal Chromium flow: PASS — hash, persistence, reopen, match, evidence,
-  print, JSON export/import, and full offline drill/export.
-- Privacy: PASS for ordinary use — only same-origin requests; no analytics,
-  remote fonts, or third-party scripts.
-- Billing: PASS — production verify and checkout respond correctly.
-- Rate limiting: PASS — a 120-request burst produced 30 × 200 and 90 × 429;
-  every 429 had `Retry-After: 4`.
-- PWA root reload/update: PASS — offline reload works, and an induced service
-  worker update shows the update-ready toast.
+Deploy `dist/` using the committed `staticwebapp.config.json`; it is also
+copied into `dist/` by Vite through `public/`. No secrets or third-party
+runtime assets are needed.
 
-## Next step
+## Known limits
 
-Do not release this candidate. Address every blocker above, add the mandatory
-claims/demo artifacts and tests, then request fresh independent verification.
+Browsers without persistent directory handles need the user to reselect the
+archive folder after a tab/browser restart. That selection is used only to
+reconnect the sample; it does not cross into the real/demo storage namespace.

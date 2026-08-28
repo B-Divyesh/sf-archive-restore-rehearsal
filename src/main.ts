@@ -1,10 +1,11 @@
 import './styles.css';
-import { clearAll, deleteVolume, exportBundle, getDrills, getFiles, getVolumes, importBundle, putDrill } from './db';
+import { clearAll, deleteVolume, exportBundle, getDrills, getFiles, getVolumes, importBundle, putDrill, setDatabaseNamespace } from './db';
+import { seedDemo } from './demo';
 import { countNoun, formatBytes, formatDate, escapeHtml } from './format';
 import { hashFile, shortHash } from './hash';
 import { captureLicenseFromUrl, checkoutUrl, initialLicenseState, removeLicense, saveLicense, verifyLicense } from './license';
 import { drillSummary, proposeSamples } from './sample';
-import { getFileFromHandle, scanDirectory, scanFileList, type ScanProgress } from './scanner';
+import { filesFromInput, getFileFromHandle, scanDirectory, scanFileList, type ScanProgress } from './scanner';
 import type { ArchiveVolume, Drill, DrillSample, ExportBundle, LicenseState, SampleResult } from './types';
 
 type View = 'map' | 'drill' | 'history' | 'settings';
@@ -24,13 +25,21 @@ class ArchiveApp {
   private previewHtml = '';
   private pendingMetadata?: { label: string; location: string; notes: string };
   private objectUrl?: string;
+  private opener?: HTMLElement;
+  private isDemo = false;
+  private fallbackFiles = new Map<string, File>();
+  private reconnecting?: { volumeId: string; sampleIndex?: number };
 
   async init(): Promise<void> {
+    this.isDemo = location.pathname === '/demo' || new URLSearchParams(location.search).get('demo') === '1';
+    if (this.isDemo) setDatabaseNamespace('demo');
+    this.view = this.viewFromLocation();
     captureLicenseFromUrl();
     this.license = initialLicenseState();
     this.bindEvents();
     this.registerServiceWorker();
     try {
+      if (this.isDemo) await seedDemo();
       [this.volumes, this.drills] = await Promise.all([getVolumes(), getDrills()]);
       this.drills.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     } catch (error) {
@@ -50,6 +59,26 @@ class ArchiveApp {
     this.root.addEventListener('change', (event) => this.handleChange(event));
     window.addEventListener('online', () => this.setToast('Back online. Your local work stayed safe.'));
     window.addEventListener('offline', () => this.setToast('Offline. Scans, drills, and exports still work.'));
+    window.addEventListener('popstate', () => { this.view = this.viewFromLocation(); this.render(); this.focusMain(); });
+  }
+
+  private viewFromLocation(): View {
+    const path = location.pathname.replace(/\/$/, '') || '/';
+    return ({ '/': 'map', '/demo': 'map', '/drill': 'drill', '/history': 'history', '/settings': 'settings' } as Record<string, View>)[path] || 'map';
+  }
+
+  private navigate(view: View, replace = false): void {
+    this.view = view;
+    const path = this.isDemo && view === 'map' ? '/demo' : view === 'map' ? '/' : `/${view}`;
+    if (location.pathname !== path) history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    this.render(); this.focusMain();
+  }
+
+  private focusMain(): void { window.setTimeout(() => this.root.querySelector<HTMLElement>('#main')?.focus(), 0); }
+
+  private setTitle(): void {
+    const titles: Record<View, string> = { map: 'Archive Restore Rehearsal — map offline archives', drill: 'Rehearse restores — Archive Restore Rehearsal', history: 'Recovery evidence — Archive Restore Rehearsal', settings: 'Data and unlock — Archive Restore Rehearsal' };
+    document.title = this.isDemo ? 'Demo — Archive Restore Rehearsal' : titles[this.view];
   }
 
   private async registerServiceWorker(): Promise<void> {
@@ -82,10 +111,11 @@ class ArchiveApp {
 
   private render(): void {
     if (this.loading) return;
+    this.setTitle();
     const content = this.error ? this.renderFatal() : this.renderView();
     this.root.innerHTML = `
       <header class="masthead">
-        <a class="wordmark" href="#map" data-view="map">
+        <a class="wordmark" href="${this.isDemo ? '/demo' : '/'}" data-view="map">
           <span class="wordmark-mark" aria-hidden="true">A/R</span><span>Archive Restore<br>Rehearsal</span>
         </a>
         <span class="local-badge"><span aria-hidden="true">●</span> ${navigator.onLine ? 'Local only' : 'Offline · local'}</span>
@@ -99,20 +129,25 @@ class ArchiveApp {
         </nav>
         <main id="main" tabindex="-1">${content}</main>
       </div>
-      <footer><p>Files and paths stay in this browser. Source media is read, never changed.</p><p><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · Generated artwork disclosed in the <a href="#settings" data-view="settings">about section</a>.</p></footer>
+      <footer><p>Archive mapping and rehearsal evidence are stored in this browser.</p><p><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="/settings" data-view="settings">About</a> · Built by Param Factory · build ${__BUILD_ID__}</p></footer>
+      ${this.isDemo ? `<aside class="demo-banner" aria-label="Demo controls"><b>Demo — sample data, nothing is saved</b><span><button data-action="reset-demo">Reset demo</button><a href="/" data-action="start-real">Start for real</a></span></aside>` : ''}
       ${this.toast ? `<div class="toast" role="status">${escapeHtml(this.toast)}</div>` : ''}
       ${this.renderDialog()}
       <input class="visually-hidden" id="folder-input" type="file" webkitdirectory multiple aria-label="Choose archive folder">
+      <input class="visually-hidden" id="reconnect-input" type="file" webkitdirectory multiple aria-label="Reconnect archive folder">
     `;
     if (this.modal) window.setTimeout(() => {
       const dialog = this.root.querySelector<HTMLDialogElement>('dialog');
-      if (dialog && !dialog.open) dialog.showModal();
+      if (dialog && !dialog.open) {
+        dialog.addEventListener('cancel', () => this.closeDialog(), { once: true });
+        dialog.showModal();
+      }
       if (this.modal === 'add') dialog?.querySelector<HTMLInputElement>('#drive-label')?.focus();
     }, 0);
   }
 
   private navItem(view: View, icon: string, label: string): string {
-    return `<a href="#${view}" data-view="${view}" ${this.view === view ? 'aria-current="page"' : ''}><span aria-hidden="true">${icon}</span><span>${label}</span></a>`;
+    return `<a href="/${view === 'map' ? '' : view}" data-view="${view}" ${this.view === view ? 'aria-current="page"' : ''}><span aria-hidden="true">${icon}</span><span>${label}</span></a>`;
   }
 
   private renderFatal(): string {
@@ -131,8 +166,8 @@ class ArchiveApp {
     const totalBytes = this.volumes.reduce((sum, volume) => sum + volume.totalBytes, 0);
     return `
       <section class="page-head">
-        <div><p class="eyebrow">Archive map / ${this.volumes.length || 'no'} locations</p><h1>Know where it lives.<br><span>Prove it opens.</span></h1><p class="lede">Catalogue folders on removable disks, then rehearse a rotating sample. Nothing is copied or uploaded.</p></div>
-        ${this.volumes.length ? `<button class="primary" data-action="open-add">+ Add archive location</button>` : ''}
+        <div><p class="eyebrow">Archive map / ${this.volumes.length || 'no'} locations</p><h1>Map drives.<br><span>Test restores.</span></h1><p class="lede">For people with years of files across USB disks, keep a local map and check a rotating sample.</p></div>
+        ${this.volumes.length ? `<button class="primary" data-action="open-add">+ Add archive location</button>` : `<a class="primary button-link" href="/demo" data-action="open-demo">Try it with sample data</a>`}
       </section>
       <section class="summary-strip" aria-label="Archive totals">
         <div><strong>${this.volumes.length}</strong><span>labelled locations</span></div>
@@ -146,7 +181,7 @@ class ArchiveApp {
 
   private renderEmptyMap(): string {
     return `<section class="welcome-sheet">
-      <div class="welcome-copy"><span class="stamp">Start here · about 5 minutes</span><h2>Turn the labels on your drives into a recovery plan.</h2><ol><li><b>Label</b> the physical drive and where you keep it.</li><li><b>Choose</b> its mounted folder. We read and hash each file.</li><li><b>Rehearse</b> a random sample and record what really opens.</li></ol><button class="primary big" data-action="open-add">Choose your first archive folder</button><p class="fineprint">Read-only by design. Folder access is requested only when you choose it.</p></div>
+      <div class="welcome-copy"><span class="stamp">Start here</span><h2>Turn drive labels into a recovery plan.</h2><p>Choose sample data to see a mapped drive, rehearsal, and recovery card now.</p><div class="button-row"><a class="primary button-link big" href="/demo" data-action="open-demo">Try it with sample data</a><button class="big" data-action="open-add">Choose an archive folder</button></div><p class="fineprint">Sample data stays in the demo. Your map stays in this browser.</p></div>
       <figure><img src="/assets/recovery-bench.webp" width="768" height="512" fetchpriority="high" alt="Risograph collage of three labelled archive drives, folders, and a magnifying glass checking a file"><figcaption>Inventory is a map. A rehearsal is evidence.</figcaption></figure>
     </section>`;
   }
@@ -181,7 +216,7 @@ class ArchiveApp {
     const volume = this.volumes.find((item) => item.id === sample.volumeId);
     const summary = drillSummary(this.currentDrill);
     return `<section class="page-head compact"><div><p class="eyebrow">Live rehearsal / ${index + 1} of ${this.currentDrill.samples.length}</p><h1>Reconnect. Open.<br><span>Record the truth.</span></h1></div><button class="quiet" data-action="end-drill">Save & leave</button></section>
-      <div class="progress-rule" aria-label="${summary.passed + summary.attention} of ${this.currentDrill.samples.length} checked"><span style="width:${((summary.passed + summary.attention) / this.currentDrill.samples.length) * 100}%"></span></div>
+      <div class="progress-rule" role="progressbar" aria-valuemin="0" aria-valuemax="${this.currentDrill.samples.length}" aria-valuenow="${summary.passed + summary.attention}" aria-label="${summary.passed + summary.attention} of ${this.currentDrill.samples.length} checked"><span class="progress-${Math.round(((summary.passed + summary.attention) / this.currentDrill.samples.length) * 100)}"></span></div>
       <section class="sample-sheet"><div class="sample-meta"><span class="stamp">Sample ${index + 1}</span><span>${formatBytes(sample.size)}</span></div><p class="eyebrow">Find this on</p><h2>${escapeHtml(volume?.label || 'Unknown archive')}</h2><p class="location-line">${escapeHtml(volume?.location || 'Physical location not recorded')}</p><div class="path-block"><span>Path</span><strong>${escapeHtml(sample.path)}</strong><button data-action="copy-path" data-path="${escapeHtml(sample.path)}">Copy</button></div><dl class="sample-details"><div><dt>Recorded SHA-256</dt><dd>${shortHash(sample.sha256)}</dd></div><div><dt>Recorded size</dt><dd>${formatBytes(sample.size)}</dd></div></dl>
       ${sample.result === 'pending' ? `<button class="primary big" data-action="open-sample" data-index="${index}">Open and verify file</button><div class="result-actions"><button data-action="mark-result" data-index="${index}" data-result="missing">File is missing</button><button data-action="mark-result" data-index="${index}" data-result="skipped">Skip this sample</button></div>` : `<div class="recorded-result ${sample.result}"><b>${sample.result === 'pass' ? '✓ Opened and matched' : '△ Needs attention'}</b><span>${escapeHtml(sample.note || '')}</span></div>${pendingIndex === -1 ? `<button class="primary big" data-action="complete-drill">Complete rehearsal</button>` : `<button data-action="next-pending">Next unchecked file</button>`}`}
       </section><section class="sample-list" aria-labelledby="sample-list-title"><h2 id="sample-list-title">This sample</h2><ol>${this.currentDrill.samples.map((item) => `<li class="${item.result}"><span aria-hidden="true">${item.result === 'pass' ? '✓' : item.result === 'pending' ? '○' : '△'}</span><span>${escapeHtml(item.name)}<small>${escapeHtml(this.volumes.find((volume) => volume.id === item.volumeId)?.label || '')}</small></span><b>${item.result}</b></li>`).join('')}</ol></section>`;
@@ -190,7 +225,7 @@ class ArchiveApp {
   private renderHistory(): string {
     const completed = this.drills.filter((drill) => drill.completedAt);
     return `<section class="page-head compact"><div><p class="eyebrow">Recovery evidence</p><h1>Keep proof<br><span>beside the drives.</span></h1><p class="lede">Print this recovery card after each rehearsal, or save it as PDF from the print dialog.</p></div><button class="primary" data-action="print">Print recovery card</button></section>
-      <section class="recovery-card" aria-labelledby="card-title"><div class="card-head"><div><p class="eyebrow">Archive restore card</p><h2 id="card-title">${countNoun(this.volumes.length, 'location')} · ${countNoun(this.volumes.reduce((sum, volume) => sum + volume.fileCount, 0), 'file')}</h2></div><div class="stamp">Updated ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date())}</div></div>
+      <section class="recovery-card" tabindex="0" aria-labelledby="card-title"><div class="card-head"><div><p class="eyebrow">Archive restore card</p><h2 id="card-title">${countNoun(this.volumes.length, 'location')} · ${countNoun(this.volumes.reduce((sum, volume) => sum + volume.fileCount, 0), 'file')}</h2></div><div class="stamp">Updated ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date())}</div></div>
       <table><thead><tr><th>Physical label</th><th>Where kept</th><th>Files / size</th><th>Last scan</th></tr></thead><tbody>${this.volumes.map((volume) => `<tr><td><b>${escapeHtml(volume.label)}</b><small>${escapeHtml(volume.rootName)}</small></td><td>${escapeHtml(volume.location || '—')}</td><td>${volume.fileCount.toLocaleString()} / ${formatBytes(volume.totalBytes)}</td><td>${formatDate(volume.lastScannedAt)}</td></tr>`).join('') || '<tr><td colspan="4">No archive locations mapped yet.</td></tr>'}</tbody></table><p class="identity-warning"><b>Before restoring:</b> match the physical label, mounted folder name, approximate size, and fingerprint. A removable drive name alone is not proof of identity.</p></section>
       <section class="history-list"><div class="section-title"><div><p class="eyebrow">Drill log</p><h2>Past rehearsals</h2></div></div>${completed.length ? completed.map((drill) => { const summary = drillSummary(drill); return `<article><div class="date-block"><b>${new Intl.DateTimeFormat(undefined, { day: '2-digit' }).format(new Date(drill.completedAt!))}</b><span>${new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(new Date(drill.completedAt!))}</span></div><div><h3>${summary.attention ? `${countNoun(summary.attention, 'item')} ${summary.attention === 1 ? 'needs' : 'need'} attention` : 'All sampled files opened'}</h3><p>${summary.passed} passed · ${drill.samples.length} sampled · ${formatDate(drill.completedAt)}</p></div><span class="status ${summary.attention ? 'attention' : 'verified'}">${summary.attention ? 'Review' : 'Passed'}</span></article>`; }).join('') : '<div class="empty-inline"><p>No completed rehearsals yet.</p><button data-view="drill">Start your first spot check</button></div>'}</section>`;
   }
@@ -214,9 +249,7 @@ class ArchiveApp {
     const view = target.dataset.view as View | undefined;
     if (view) {
       event.preventDefault();
-      this.view = view;
-      this.render();
-      this.root.querySelector<HTMLElement>('#main')?.focus();
+      this.navigate(view);
       return;
     }
     const action = target.dataset.action;
@@ -224,8 +257,12 @@ class ArchiveApp {
       if (!this.license.unlocked && this.volumes.length >= 3) {
         this.view = 'settings'; this.setToast('The free plan includes three archive locations.'); return;
       }
-      this.modal = 'add'; this.render();
+      this.opener = target; this.modal = 'add'; this.render();
+    } else if (action === 'open-demo' || action === 'start-real') {
+      // These are normal links so that the demo remains directly linkable.
+      return;
     } else if (action === 'close-dialog') this.closeDialog();
+    else if (action === 'reset-demo') { await clearAll(); await seedDemo(); [this.volumes, this.drills] = await Promise.all([getVolumes(), getDrills()]); this.currentDrill = undefined; this.navigate('map', true); this.setToast('Demo reset.'); }
     else if (action === 'reload') location.reload();
     else if (action === 'rescan') await this.rescan(target.dataset.id!);
     else if (action === 'remove-volume') await this.removeVolume(target.dataset.id!);
@@ -277,6 +314,13 @@ class ArchiveApp {
     if (input.id === 'folder-input' && input.files?.length && this.pendingMetadata) {
       await this.addAndScanFiles(input.files);
       input.value = '';
+    } else if (input.id === 'reconnect-input' && input.files?.length && this.reconnecting) {
+      const reconnecting = this.reconnecting;
+      this.cacheFallbackFiles(reconnecting.volumeId, input.files);
+      const volume = this.volumes.find((item) => item.id === reconnecting.volumeId)!;
+      if (reconnecting.sampleIndex !== undefined) await this.openSample(reconnecting.sampleIndex);
+      else await this.runScan(volume, () => scanFileList(volume, input.files!, (progress) => this.updateScan(progress)));
+      this.reconnecting = undefined; input.value = '';
     } else if (input.id === 'import-file' && input.files?.[0]) {
       try {
         const bundle = JSON.parse(await input.files[0].text()) as ExportBundle;
@@ -291,12 +335,18 @@ class ArchiveApp {
   }
 
   private closeDialog(render = true): void {
+    const openerAction = this.opener?.dataset.action;
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = undefined;
     this.root.querySelector<HTMLDialogElement>('dialog')?.close();
     this.modal = undefined;
     this.previewHtml = '';
     if (render) this.render();
+    if (render) window.setTimeout(() => {
+      const replacement = openerAction ? this.root.querySelector<HTMLElement>(`[data-action="${openerAction}"]`) : undefined;
+      (replacement || this.opener)?.focus();
+    }, 0);
+    this.opener = undefined;
   }
 
   private async addAndScan(handle: FileSystemDirectoryHandle): Promise<void> {
@@ -309,6 +359,7 @@ class ArchiveApp {
   private async addAndScanFiles(files: FileList): Promise<void> {
     const meta = this.pendingMetadata!;
     const volume: ArchiveVolume = { id: crypto.randomUUID(), ...meta, rootName: '', addedAt: new Date().toISOString(), fileCount: 0, totalBytes: 0, scanState: 'ready' };
+    this.cacheFallbackFiles(volume.id, files);
     this.volumes.push(volume); this.pendingMetadata = undefined;
     await this.runScan(volume, () => scanFileList(volume, files, (progress) => this.updateScan(progress)));
   }
@@ -341,7 +392,7 @@ class ArchiveApp {
         if (await handle.requestPermission?.({ mode: 'read' }) !== 'granted') handle = undefined;
       }
       if (!handle) {
-        if (!window.showDirectoryPicker) { this.setToast('Choose the folder using Add archive location in this browser.'); return; }
+        if (!window.showDirectoryPicker) { this.reconnecting = { volumeId: id }; this.root.querySelector<HTMLInputElement>('#reconnect-input')?.click(); return; }
         handle = await window.showDirectoryPicker({ mode: 'read' });
         if (volume.rootName && handle.name !== volume.rootName && !confirm(`This folder is named “${handle.name}”, not “${volume.rootName}”. Scan it into ${volume.label} anyway?`)) return;
       }
@@ -369,16 +420,22 @@ class ArchiveApp {
   private async openSample(index: number): Promise<void> {
     const sample = this.currentDrill!.samples[index];
     const volume = this.volumes.find((item) => item.id === sample.volumeId);
-    if (!volume?.handle) { this.setToast(`Reconnect “${volume?.label || 'the archive'}” with Scan again, then return to this sample.`); return; }
+    if (!volume) { this.setToast('This sample no longer has an archive location.'); return; }
+    const fallback = this.fallbackFiles.get(`${volume.id}:${sample.path}`);
+    if (!volume.handle && !fallback) {
+      if (!window.showDirectoryPicker) { this.reconnecting = { volumeId: volume.id, sampleIndex: index }; this.root.querySelector<HTMLInputElement>('#reconnect-input')?.click(); return; }
+      this.setToast(`Reconnect “${volume.label}” with Scan again, then return to this sample.`); return;
+    }
     try {
-      if (volume.handle.queryPermission && await volume.handle.queryPermission({ mode: 'read' }) !== 'granted') {
+      if (volume.handle?.queryPermission && await volume.handle.queryPermission({ mode: 'read' }) !== 'granted') {
         if (await volume.handle.requestPermission?.({ mode: 'read' }) !== 'granted') throw new Error('Folder permission was not granted.');
       }
       this.setToast(`Reading and hashing ${sample.name}…`);
-      const file = await getFileFromHandle(volume.handle, sample.path);
+      const file = fallback || await getFileFromHandle(volume.handle!, sample.path);
       const currentHash = await hashFile(file);
       const matches = currentHash === sample.sha256 && file.size === sample.size;
       this.objectUrl = URL.createObjectURL(file);
+      this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
       const safeName = escapeHtml(sample.name);
       let preview = `<div class="binary-preview"><span aria-hidden="true">FILE</span><a href="${this.objectUrl}" target="_blank" rel="noopener">Open ${safeName} in a new tab</a></div>`;
       if (file.type.startsWith('image/')) preview = `<img class="file-preview" src="${this.objectUrl}" alt="Preview of ${safeName}">`;
@@ -391,6 +448,10 @@ class ArchiveApp {
     } catch (error) {
       await this.markResult(index, 'missing', error instanceof Error ? error.message : 'The file could not be read.');
     }
+  }
+
+  private cacheFallbackFiles(volumeId: string, files: FileList): void {
+    for (const item of filesFromInput(files)) this.fallbackFiles.set(`${volumeId}:${item.path}`, item.file);
   }
 
   private async confirmPreviewResult(passed: boolean): Promise<void> {
@@ -408,7 +469,7 @@ class ArchiveApp {
 
   private async completeDrill(): Promise<void> {
     this.currentDrill!.completedAt = new Date().toISOString(); await putDrill(this.currentDrill!);
-    this.drills.unshift(this.currentDrill!); this.currentDrill = undefined; this.view = 'history'; this.setToast('Rehearsal recorded. Print the recovery card for your drive box.');
+    this.drills.unshift(this.currentDrill!); this.currentDrill = undefined; this.navigate('history'); this.setToast('Rehearsal recorded. Print the recovery card for your drive box.');
   }
 
   private async exportJson(): Promise<void> {

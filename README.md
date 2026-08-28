@@ -1,14 +1,11 @@
 # Archive Restore Rehearsal
 
-Archive Restore Rehearsal is a local-first, installable web app for people with
-years of files spread across USB disks. It creates a physical archive map,
-catalogues chosen folders with incremental SHA-256 hashes, proposes rotating
-restore samples, previews supported files, records evidence, and prints a
-recovery card.
+Archive Restore Rehearsal is for people with years of files across USB disks.
+It provides an archive map and a restore rehearsal workspace.
 
-It does **not** copy, repair, sync, or back up files. Source folders are opened
-read-only and archive data stays in the browser. Removable-drive identity is
-explicitly treated as fallible.
+Open [the demo](https://archive-restore-rehearsal.sociobot.in/demo) to inspect
+the shipped sample workspace. See [`.factory/claims.json`](.factory/claims.json)
+for tested product claims and their exact sandbox commands.
 
 Live product: <https://archive-restore-rehearsal.sociobot.in>
 
@@ -26,9 +23,8 @@ npm install
 npm run dev
 ```
 
-Open the printed local URL in a Chromium browser for persistent folder-handle
-support. Firefox and Safari can catalogue a folder through their directory file
-picker, but will require it to be selected again for later access.
+Open the printed local URL. Chromium can retain a folder permission. Other
+browsers ask you to select a folder again when reconnecting it.
 
 ## Test and build
 
@@ -46,11 +42,9 @@ The exact production build command is `npm run build`. Static output lands in
 
 ## Data and privacy
 
-IndexedDB stores archive labels, physical locations, folder handles where the
-browser supports them, file paths, sizes, SHA-256 hashes, and drill history.
-The JSON export/import path is always free. Exports can reveal private paths
-and should be stored carefully. No analytics, remote fonts, or third-party
-runtime scripts are included.
+The app stores archive records in IndexedDB. Exported archive records can
+contain private paths, so store downloads carefully. Privacy details are on
+the [privacy page](https://archive-restore-rehearsal.sociobot.in/privacy/).
 
 The optional US$29 one-time Archive keeper unlock uses the Sociobot billing
 API. Set `VITE_BILLING_BASE=https://pilot-api.sociobot.in` for registered test
@@ -63,9 +57,8 @@ provenance, and [`.factory/handoff.md`](.factory/handoff.md) for verification.
 
 ## Deploy
 
-Deploy the contents of `dist/` as a static site. Configure clean static folder
-routes so `/privacy/` and `/terms/` serve their `index.html` files. Do not add
-infra, secrets, analytics, or billing configuration to this repository.
+Deploy the contents of `dist/` as a static site. `staticwebapp.config.json` is
+included in the build output for headers, fallback routing, and asset caching.
 
 ## License
 

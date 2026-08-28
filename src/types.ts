@@ -64,6 +64,7 @@ export interface LicenseState {
 }
 
 declare global {
+  const __BUILD_ID__: string;
   interface Window {
     showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
   }

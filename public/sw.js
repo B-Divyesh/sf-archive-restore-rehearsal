@@ -1,7 +1,7 @@
-const VERSION = 'arr-v3';
+const VERSION = 'arr-v4';
 const SHELL = `${VERSION}-shell`;
 const ASSETS = `${VERSION}-assets`;
-const CORE = ['/', '/index.html', '/offline.html', '/manifest.webmanifest', '/assets/recovery-bench.webp', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CORE = ['/', '/index.html', '/offline.html', '/404.html', '/privacy/', '/terms/', '/legal.css', '/manifest.webmanifest', '/assets/recovery-bench.webp', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SHELL).then(async (cache) => {
@@ -24,9 +24,9 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then((response) => {
       const copy = response.clone();
-      caches.open(SHELL).then((cache) => cache.put('/index.html', copy));
+      caches.open(SHELL).then((cache) => cache.put(request, copy));
       return response;
-    }).catch(async () => (await caches.match('/index.html')) || caches.match('/offline.html')));
+    }).catch(async () => (await caches.match(request)) || (await caches.match('/index.html')) || caches.match('/offline.html')));
     return;
   }
   if (/\.(?:js|css|png|webp|svg|webmanifest)$/.test(url.pathname)) {
