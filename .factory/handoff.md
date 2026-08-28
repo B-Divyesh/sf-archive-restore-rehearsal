@@ -1,88 +1,64 @@
-# Archive Restore Rehearsal — build handoff
+# Archive Restore Rehearsal — independent verification handoff
 
-## What shipped
+## Status: FAIL
 
-A finished v1 local-first PWA for mapping offline archives and proving that a
-rotating sample can still be restored:
+Candidate `024a7ad29e6353afa5f2317e16fd31c023abdf07` was independently tested on
+2026-08-28 at <https://archive-restore-rehearsal.sociobot.in>. The live HTML,
+JS, CSS, artwork, service worker, manifest, privacy page, and terms page are
+byte-identical to the candidate production build. This is not a deployment-only
+failure.
 
-- Explicit physical labels, storage locations, recovery notes, mounted folder
-  names, content totals, scan dates, and fallible-identity fingerprints.
-- User-initiated read-only folder access with a Chromium File System Access API
-  path and a directory-upload fallback.
-- Recursive, incremental 4 MB chunk processing and SHA-256 hashing so large
-  files do not need to be loaded fully into memory.
-- IndexedDB persistence for volume catalogues, file records, saved folder
-  handles where supported, and drill history.
-- Rotating samples biased toward files not rehearsed recently, with live
-  locate/open/rehash/preview/record steps and explicit pass, unreadable,
-  missing, and skipped outcomes.
-- Previews for images, text, PDF, audio, and video, plus a new-tab handoff for
-  other file types.
-- Printable recovery card and portable JSON export/import, both free.
-- Install manifest, 192/512/maskable icons, versioned service-worker caches,
-  offline app-shell reload, and update-ready messaging.
-- $29 one-time Archive keeper tier using only the Sociobot checkout and verify
-  contract: unlimited locations and adjustable sample sizes. License return,
-  local storage, once-daily verification cache, optimistic offline behavior,
-  paste-to-restore, and revocation handling are implemented. Production API is
-  the default; `VITE_BILLING_BASE` switches staging to the pilot API. No
-  provider product ID is embedded.
-- Responsive keyboard-accessible UI, explicit error/empty/offline/scanning
-  states, reduced-motion treatment, privacy and terms pages, and no analytics,
-  remote fonts, or third-party runtime scripts.
-- Original recovery-bench risograph illustration. Source PNG and generation
-  sidecars are in `assets/src/`; the reviewed shipping WebP is 124 KB. Full
-  prompt and provenance are in `.factory/design.md`.
+Full evidence and reproduction details are in the
+[verification report](verification.md).
 
-## How to run and verify
+## Release blockers
+
+- `.factory/claims.json` is missing; no claim tests exist, while the product
+  and README make many privacy/offline/feature claims.
+- There is no one-click sample-data demo, isolated demo namespace,
+  `.factory/demo.md`, demo banner, or reset/start-real path. `/demo` and
+  `?demo=1` open the real empty app/database.
+- The cold first screen does not plainly name its audience, and its first
+  action is below both the 1440 × 1000 and 390 × 844 viewports.
+- A structurally invalid but top-level-valid import clears the existing
+  IndexedDB map before failing, causing confirmed data loss after reload.
+- The Firefox/Safari directory-upload fallback can catalogue but cannot
+  reconnect/open/hash-check a sampled file.
+- Axe finds serious ARIA and non-focusable-scroll-region violations in the
+  live drill and mobile evidence views. Escape/close dialog focus behavior is
+  also broken.
+- Workspace views do not change history/URL/title and cannot be deep-linked or
+  restored with back/forward.
+- Required CSP/deployment config, discovery metadata, designed 404, consistent
+  legal-page skeleton, copy audit, and build identity are absent.
+
+## Verification summary
 
 ```sh
-npm install
+npm ci
 npm test
 npm run build
-npm run preview
+npm audit --audit-level=moderate
 ```
 
-The exact build command is `npm run build`; output is `dist/`, and
-`dist/index.html` is present at its root.
+- `npm test`: PASS — 5 unit tests and 10 Playwright scenarios.
+- `npm run build`: PASS — TypeScript and Vite; `dist/index.html` present.
+- Audit: PASS — zero vulnerabilities.
+- Build budget: PASS — 39.99 KB JS raw (14.29 KB gzip), 18.19 KB CSS raw
+  (4.72 KB gzip), 126.5 KB hero, no fonts.
+- Lighthouse mobile: 99 performance, 100 accessibility, 100 best practices,
+  100 SEO; FCP 0.96 s, LCP 1.736 s, TBT 72 ms, CLS 0.
+- Normal Chromium flow: PASS — hash, persistence, reopen, match, evidence,
+  print, JSON export/import, and full offline drill/export.
+- Privacy: PASS for ordinary use — only same-origin requests; no analytics,
+  remote fonts, or third-party scripts.
+- Billing: PASS — production verify and checkout respond correctly.
+- Rate limiting: PASS — a 120-request burst produced 30 × 200 and 90 × 429;
+  every 429 had `Retry-After: 4`.
+- PWA root reload/update: PASS — offline reload works, and an induced service
+  worker update shows the update-ready toast.
 
-Verification on 2026-08-28:
+## Next step
 
-- `npm test`: passed — 5 unit assertions and 10 Playwright scenarios across
-  desktop Chromium and a 390 × 844 Chromium mobile viewport. Coverage includes
-  empty/error guidance, keyboard dialog focus, folder selection and hashing,
-  drill recording, legal routes, axe serious/critical checks, and explicit
-  `context.setOffline(true)` reload.
-- `npm run build`: passed with Vite 6.4.3. Initial application JS is 39.99 KB
-  (14.29 KB gzip), CSS is 18.19 KB (4.72 KB gzip), and hero WebP is 124 KB.
-- `npm audit --audit-level=moderate`: 0 vulnerabilities.
-- `/opt/fleet/lib/verify-url.sh http://127.0.0.1:4173 /tmp/arr-verify`:
-  HTTP 200, 673 ms local load, no console errors, title and `lang` present, one
-  `<h1>`, main landmark present, zero images missing alt, zero unlabeled
-  buttons.
-- Lighthouse 12.5.1, mobile preset against the production preview:
-  performance 99, accessibility 100, best practices 100, SEO 100; FCP 1.1 s,
-  LCP 2.0 s, total blocking time 0 ms, CLS 0.
-- Desktop and 390 px full-page screenshots were visually reviewed. Text,
-  controls, navigation, hero crop, and document flow remain intact.
-
-## Known limits and next steps
-
-- Browsers intentionally do not expose reliable USB serial numbers. Identity
-  is therefore a user-visible combination of physical label, mounted name,
-  size, and a catalogue-derived fingerprint; the UI never calls it certain.
-- Persistent directory handles and in-place re-opening work best in Chromium.
-  Safari and Firefox can catalogue through directory upload but do not provide
-  a reusable handle, so a later open check requires reselecting/cataloguing the
-  folder. A future File System Access implementation in those browsers can
-  remove this limitation without changing stored exports.
-- Hashing is incremental and yields between chunks, but the first full scan of
-  a multi-terabyte archive is necessarily I/O-heavy. A future version could add
-  resumable scan checkpoints and unchanged-file metadata reuse.
-- The factory must register the product with Sociobot billing before checkout
-  and verification succeed in production. For staging, build with
-  `VITE_BILLING_BASE=https://pilot-api.sociobot.in` and the factory's registered
-  test product.
-- A sample is evidence for the selected files at the recorded moment, not a
-  guarantee for the complete archive. This limitation is stated in the app and
-  terms.
+Do not release this candidate. Address every blocker above, add the mandatory
+claims/demo artifacts and tests, then request fresh independent verification.
