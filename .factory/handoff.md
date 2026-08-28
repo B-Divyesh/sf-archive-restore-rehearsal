@@ -3,8 +3,9 @@
 ## Status
 
 Repaired the independent-verifier release blockers from commit
-`0dad1f3ad53f4d5f59f92441d2e0ff082681d1cd`. This remains a Vite + TypeScript,
-static, offline PWA with `dist/index.html` at the build root.
+`0dad1f3ad53f4d5f59f92441d2e0ff082681d1cd`. Repairs are committed as
+`78325a7` and the release-policy follow-up as `94a97fd`. This remains a Vite +
+TypeScript, static, offline PWA with `dist/index.html` at the build root.
 
 ## Repairs
 
@@ -55,8 +56,10 @@ claim command in `.factory/claims.json` was also run independently and passed.
 
 Current build output: 46.05 KB raw JavaScript (15.99 KB gzip) and 19.32 KB raw
 CSS (4.92 KB gzip), below the static-product budgets. The hero remains 126.5
-KB. No new Lighthouse run is included because the provided browser suite
-exercises the repaired PWA states; pre-repair live Lighthouse was 99/100/100/100.
+KB. A current Lighthouse CLI run was attempted with the supplied Playwright
+Chromium but its browser tab crashed before results; it did not report scores.
+Pre-repair live Lighthouse was 99/100/100/100. The current browser checks and
+bundle budgets pass.
 
 ## Run / deploy
 
@@ -70,6 +73,16 @@ npm run preview
 Deploy `dist/` using the committed `staticwebapp.config.json`; it is also
 copied into `dist/` by Vite through `public/`. No secrets or third-party
 runtime assets are needed.
+
+## Deployment evidence
+
+Deployed production with `/opt/fleet/lib/deploy-static.sh
+archive-restore-rehearsal /work/repo/dist`; Azure deployment id
+`42fa9c27-75ff-4c30-b9fe-3559210c1d40` succeeded. Live verification on
+2026-08-28 returned the current `index-Crp-08VR.js` asset, CSP, immutable
+hashed-asset caching, manifest `application/manifest+json`, a `404` designed
+response for an unknown path, and `200` for `/demo`. `verify-url.sh` against
+the live URL passed in 686 ms with no console errors.
 
 ## Known limits
 
