@@ -1,5 +1,5 @@
 import './styles.css';
-import { deleteVolume, exportBundle, getDrills, getFiles, getVolumes, importBundle, putDrill, putVolume } from './db';
+import { clearAll, deleteVolume, exportBundle, getDrills, getFiles, getVolumes, importBundle, putDrill } from './db';
 import { countNoun, formatBytes, formatDate, escapeHtml } from './format';
 import { hashFile, shortHash } from './hash';
 import { captureLicenseFromUrl, checkoutUrl, initialLicenseState, removeLicense, saveLicense, verifyLicense } from './license';
@@ -85,7 +85,7 @@ class ArchiveApp {
     const content = this.error ? this.renderFatal() : this.renderView();
     this.root.innerHTML = `
       <header class="masthead">
-        <a class="wordmark" href="#map" data-view="map" aria-label="Archive Restore Rehearsal home">
+        <a class="wordmark" href="#map" data-view="map">
           <span class="wordmark-mark" aria-hidden="true">A/R</span><span>Archive Restore<br>Rehearsal</span>
         </a>
         <span class="local-badge"><span aria-hidden="true">●</span> ${navigator.onLine ? 'Local only' : 'Offline · local'}</span>
@@ -420,7 +420,7 @@ class ArchiveApp {
 
   private async clearData(): Promise<void> {
     if (!confirm('Erase all archive labels, hashes, and drill history stored in this browser? Source files will not be touched. Export first if you need a copy.')) return;
-    const { clearAll } = await import('./db'); await clearAll(); this.volumes = []; this.drills = []; this.currentDrill = undefined; this.view = 'map'; this.setToast('Local archive map erased. Source files were not changed.');
+    await clearAll(); this.volumes = []; this.drills = []; this.currentDrill = undefined; this.view = 'map'; this.setToast('Local archive map erased. Source files were not changed.');
   }
 }
 
